@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: diamond-concierge-api
+    env: python
+    buildCommand: ""
+    startCommand: python main.py
+    envVars:
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        value: credentials.json
