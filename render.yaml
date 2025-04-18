@@ -7,3 +7,5 @@ services:
     envVars:
       - key: GOOGLE_APPLICATION_CREDENTIALS
         value: credentials.json
+      - key: PORT
+        value: 10000
