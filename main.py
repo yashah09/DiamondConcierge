@@ -13,7 +13,7 @@ import io
 FOLDER_ID = '1diAVIuJdsOQhLEQuFzie6QACakeOie25'
 SHEET_ID = '1ZZHmuGyxgq6ISyTpqSupugrNczYiyLWQY6w5oEgWnwc'
 MAKE_WEBHOOK_URL = 'https://hook.eu2.make.com/h6jsruunr7u01wobm995dj8wtcmafph8'
-INVENTORY_FILE_ID = '1McHVVICDeeMRiA1fRU7inHmbSUCzeOD2'  # ✅ Your current inventory file
+INVENTORY_FILE_ID = '1McHVVICDeeMRiA1fRU7inHmbSUCzeOD2'
 
 # AUTH
 SCOPES = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets']
@@ -26,7 +26,7 @@ app = Flask(__name__)
 drive_service = build('drive', 'v3', credentials=creds)
 sheets_service = build('sheets', 'v4', credentials=creds)
 
-# ✅ New: Pull inventory from Google Drive
+# ✅ Read inventory from Google Drive
 def get_latest_inventory_from_drive(file_id=INVENTORY_FILE_ID):
     try:
         request = drive_service.files().get_media(fileId=file_id)
@@ -34,11 +34,11 @@ def get_latest_inventory_from_drive(file_id=INVENTORY_FILE_ID):
         downloader = MediaIoBaseDownload(fh, request)
 
         done = False
-        while done is False:
+        while not done:
             status, done = downloader.next_chunk()
 
         fh.seek(0)
-        df = pd.read_excel(fh)
+        df = pd.read_excel(fh, engine='openpyxl')
         return df
 
     except Exception as e:
@@ -86,7 +86,7 @@ def upload():
         body={"values": row}
     ).execute()
 
-    # ✅ Send to Make.com webhook
+    # Send to Make.com webhook
     payload = {
         "email": client_email,
         "file_link": file_link,
@@ -100,18 +100,18 @@ def upload():
 
     return jsonify({'message': 'Uploaded successfully', 'link': file_link})
 
-# ✅ Fixed preview endpoint to avoid crash
 @app.route('/test-inventory', methods=['GET'])
 def test_inventory():
     df = get_latest_inventory_from_drive()
     if df is None:
         return jsonify({"error": "Could not read inventory file"}), 500
 
-    # Fix any weird types and NaN values
-    df = df.fillna("")
-    preview = df.head(5).astype(str).to_dict(orient="records")
-
-    return jsonify(preview)
+    try:
+        preview = df.head(5).astype(str).to_dict(orient="records")
+        return jsonify(preview)
+    except Exception as e:
+        print("Error during inventory preview:", e)
+        return jsonify({"error": "Inventory loaded but failed to serialize"}), 500
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=10000)
