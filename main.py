@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
@@ -24,8 +25,26 @@ creds = service_account.Credentials.from_service_account_file(
 
 # INIT
 app = Flask(__name__)
+CORS(app)
 drive_service = build('drive', 'v3', credentials=creds)
 sheets_service = build('sheets', 'v4', credentials=creds)
+
+def get_latest_inventory_from_drive(file_id=INVENTORY_FILE_ID):
+    try:
+        request = drive_service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+
+        fh.seek(0)
+        df = pd.read_excel(fh)
+        return df
+    except Exception as e:
+        print("Error downloading inventory file:", e)
+        return None
 
 def filter_inventory(df, filters):
     df = df.copy()
@@ -118,3 +137,6 @@ def generate():
         print("Failed to notify Make.com:", e)
 
     return jsonify({"message": "File generated and uploaded", "link": file_link})
+
+if __name__ == '__main__':
+    app.run(host="0.0.0.0", port=10000)
