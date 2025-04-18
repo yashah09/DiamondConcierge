@@ -147,3 +147,7 @@ def generate():
         print("Failed to notify Make.com:", e)
 
     return jsonify({"message": "File generated and uploaded", "link": file_link})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
+
