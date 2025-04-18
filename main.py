@@ -5,10 +5,12 @@ from googleapiclient.http import MediaFileUpload
 import os
 import uuid
 import datetime
+import requests  # ✅ Make webhook needs this
 
 # CONFIGURATION
 FOLDER_ID = '1diAVIuJdsOQhLEQuFzie6QACakeOie25'
 SHEET_ID = '1ZZHmuGyxgq6ISyTpqSupugrNczYiyLWQY6w5oEgWnwc'
+MAKE_WEBHOOK_URL = 'https://hook.eu2.make.com/h6jsruunr7u01wobm995dj8wtcmafph8'  # ✅ Your Make.com webhook
 
 # AUTH
 SCOPES = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets']
@@ -61,6 +63,18 @@ def upload():
         valueInputOption="RAW",
         body={"values": row}
     ).execute()
+
+    # ✅ Send to Make.com webhook
+    payload = {
+        "email": client_email,
+        "file_link": file_link,
+        "file_name": file.filename
+    }
+
+    try:
+        requests.post(MAKE_WEBHOOK_URL, json=payload)
+    except Exception as e:
+        print("Failed to notify Make.com:", e)
 
     return jsonify({'message': 'Uploaded successfully', 'link': file_link})
 
