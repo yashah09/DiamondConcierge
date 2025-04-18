@@ -11,9 +11,9 @@ import io
 
 # CONFIGURATION
 FOLDER_ID = '1diAVIuJdsOQhLEQuFzie6QACakeOie25'
-SHEET_ID = '1ZZHmuGyxgq6ISyTpqSupugrNczYiyLWQY6w5oEgWnwc'
+SHEET_ID = '1ZZHmuGyxgq6ISyTpqSupugrNczYiyLWQ6w5oEgWnwc'
 MAKE_WEBHOOK_URL = 'https://hook.eu2.make.com/h6jsruunr7u01wobm995dj8wtcmafph8'
-INVENTORY_FILE_ID = '1ICfLWrIz6YsqFt6NHrUXxHSmrPhezefu'  # ✅ Your fixed Excel file ID
+INVENTORY_FILE_ID = '1McHVVICDeeMRiA1fRU7inHmbSUCzeOD2'  # ✅ updated with your latest file ID
 
 # AUTH
 SCOPES = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets']
