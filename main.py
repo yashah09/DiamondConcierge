@@ -18,7 +18,7 @@ INVENTORY_FILE_ID = '1McHVVICDeeMRiA1fRU7inHmbSUCzeOD2'
 # AUTH
 SCOPES = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets']
 creds = service_account.Credentials.from_service_account_file(
-    'credentials.json', scopes=SCOPES
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"], scopes=SCOPES
 )
 
 # INIT
