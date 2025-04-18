@@ -1,7 +1,7 @@
-Flask
-pandas
-requests
+flask
+flask-cors
 google-auth
 google-api-python-client
-google-auth-oauthlib
+pandas
+requests
 openpyxl
