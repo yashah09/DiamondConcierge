@@ -1,11 +1,12 @@
 from flask import Flask, request, jsonify
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 import os
 import uuid
 import requests
 import pandas as pd
+import io
 
 # CONFIGURATION
 FOLDER_ID = '1diAVIuJdsOQhLEQuFzie6QACakeOie25'
@@ -26,12 +27,13 @@ drive_service = build('drive', 'v3', credentials=creds)
 def get_latest_inventory_from_drive():
     try:
         request_file = drive_service.files().get_media(fileId=INVENTORY_FILE_ID)
-        fh = open("temp_inventory.xlsx", "wb")
-        downloader = MediaFileUpload("temp_inventory.xlsx", mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        request_file.execute(fh)
-        fh.close()
-        df = pd.read_excel("temp_inventory.xlsx", engine="openpyxl")
-        os.remove("temp_inventory.xlsx")
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request_file)
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+        fh.seek(0)
+        df = pd.read_excel(fh, engine="openpyxl")
         return df
     except Exception as e:
         print("Error reading inventory:", e)
@@ -150,4 +152,3 @@ def generate():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
-
