@@ -1,5 +1,4 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
@@ -9,7 +8,6 @@ import datetime
 import requests
 import pandas as pd
 import io
-from openpyxl import Workbook
 
 # CONFIGURATION
 FOLDER_ID = '1diAVIuJdsOQhLEQuFzie6QACakeOie25'
@@ -25,7 +23,6 @@ creds = service_account.Credentials.from_service_account_file(
 
 # INIT
 app = Flask(__name__)
-CORS(app)
 drive_service = build('drive', 'v3', credentials=creds)
 sheets_service = build('sheets', 'v4', credentials=creds)
 
@@ -36,7 +33,7 @@ def get_latest_inventory_from_drive(file_id=INVENTORY_FILE_ID):
         downloader = MediaIoBaseDownload(fh, request)
 
         done = False
-        while not done:
+        while done is False:
             status, done = downloader.next_chunk()
 
         fh.seek(0)
@@ -138,5 +135,16 @@ def generate():
 
     return jsonify({"message": "File generated and uploaded", "link": file_link})
 
+@app.route('/test-inventory', methods=['GET'])
+def test_inventory():
+    df = get_latest_inventory_from_drive()
+    if df is None:
+        return jsonify({"error": "Could not read inventory file"}), 500
+    try:
+        return jsonify(df.head(5).to_dict(orient="records"))
+    except Exception:
+        return jsonify({"error": "Inventory loaded but failed to serialize"}), 500
+
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=10000)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
