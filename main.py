@@ -7,7 +7,7 @@ import uuid
 import requests
 import pandas as pd
 import io
-from openpyxl import load_workbook, Workbook
+from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 
 # CONFIGURATION
@@ -49,44 +49,44 @@ def write_styled_excel(df_filtered, filename):
     # Styles
     red_fill = PatternFill(start_color="9E0000", end_color="9E0000", fill_type="solid")
     pink_fill = PatternFill(start_color="FFCDCD", end_color="FFCDCD", fill_type="solid")
-    white_font = Font(color="FFFFFF", bold=True, name="Aptos Narrow")
-    pink_font = Font(bold=False, name="Aptos Narrow")
+    white_bold = Font(color="FFFFFF", bold=True, name="Aptos Narrow")
+    white_regular = Font(color="FFFFFF", bold=False, name="Aptos Narrow")
+    pink_bold = Font(color="000000", bold=True, name="Aptos Narrow")
+    pink_regular = Font(color="000000", bold=False, name="Aptos Narrow")
     center = Alignment(horizontal="center", vertical="center")
 
-    # Row 1 - Header Labels
-    ws["G1"] = "Stones"
-    ws["H1"] = "Carat"
-    ws["J1"] = "Rap Avg"
-    ws["K1"] = "PPC Avg"
-    ws["L1"] = "Avg Disc"
-    ws["P1"] = "Total Value"
-    for cell in ["G1", "H1", "J1", "K1", "L1", "P1"]:
-        ws[cell].fill = red_fill
-        ws[cell].font = white_font
-        ws[cell].alignment = center
+    # F1–P1 styling
+    for col in range(6, 17):
+        cell = ws.cell(row=1, column=col)
+        cell.fill = red_fill
+        cell.font = white_bold
+        cell.alignment = center
 
-    # Row 2 - Formulas + "Selection" Label
+    # F2–P2 styling
+    for col in range(6, 17):
+        cell = ws.cell(row=2, column=col)
+        cell.fill = pink_fill
+        cell.alignment = center
+        if col == 6:
+            cell.font = pink_bold
+            cell.value = "Selection"
+        else:
+            cell.font = pink_regular
+
+    # Row 3 headers
+    for cell in ws[3]:
+        cell.fill = red_fill
+        cell.font = white_bold
+        cell.alignment = center
+
+    # Summary formulas
     row_end = 3 + len(df_filtered)
-    ws["F2"] = "Selection"
-    ws["F2"].fill = pink_fill
-    ws["F2"].font = pink_font
-
     ws["G2"] = f"=SUBTOTAL(3,B4:B{row_end})"
     ws["H2"] = f"=SUBTOTAL(9,E4:E{row_end})"
     ws["J2"] = f"=SUBTOTAL(9,M4:M{row_end})/H2"
     ws["K2"] = f"=SUBTOTAL(9,P4:P{row_end})/H2"
     ws["L2"] = f"=((K2/J2)-1)*100"
     ws["P2"] = f"=IF(G2<200,SUBTOTAL(9,P4:P{row_end}),0)"
-    for cell in ["G2", "H2", "J2", "K2", "L2", "P2"]:
-        ws[cell].fill = pink_fill
-        ws[cell].font = pink_font
-        ws[cell].alignment = center
-
-    # Row 3 - Column Headers (same style as Row 1)
-    for cell in ws["3:3"]:
-        cell.fill = red_fill
-        cell.font = white_font
-        cell.alignment = center
 
     wb.save(filename)
 
@@ -103,9 +103,7 @@ def generate():
     if df is None:
         return jsonify({"error": "Could not load inventory"}), 500
 
-    # (Filtering logic would go here)
-    df_filtered = df.copy()  # Replace with your filter logic
-
+    df_filtered = df.copy()  # replace this with filter logic
     if df_filtered.empty:
         return jsonify({"error": "No matching stones"}), 404
 
