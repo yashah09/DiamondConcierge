@@ -39,68 +39,6 @@ def get_latest_inventory_from_drive():
         print("Error reading inventory:", e)
         return None
 
-def filter_inventory(df, filters):
-    df = df.copy()
-    shape_aliases = {
-        "CU": "Cushion", "CB": "Cushion", "AS": "Asscher", "SQEM": "Asscher",
-        "RD": "Round", "PS": "Pear", "OV": "Oval", "EM": "Emerald", "PR": "Princess"
-    }
-
-    if "shape" in filters:
-        shape = filters["shape"].upper()
-        match_shape = shape_aliases.get(shape, shape)
-        df = df[df["Shape"].fillna("").str.upper() == match_shape.upper()]
-
-    if "certified" in filters:
-        df = df[df["Lab Name"].notna()] if filters["certified"] else df[df["Lab Name"].isna()]
-
-    if "size_min" in filters and "size_max" in filters:
-        df = df[(df["Cts"] >= filters["size_min"]) & (df["Cts"] <= filters["size_max"])]
-
-    if "color_min" in filters and "color_max" in filters:
-        color_order = ["D", "E", "F", "G", "H", "I", "J", "K", "L", "M"]
-        min_idx = color_order.index(filters["color_min"].upper())
-        max_idx = color_order.index(filters["color_max"].upper())
-        df = df[df["Color"].fillna("").str.upper().isin(color_order[min_idx:max_idx+1])]
-
-    if "clarity_min" in filters and "clarity_max" in filters:
-        clarity_order = ["IF", "VVS1", "VVS2", "VS1", "VS2", "SI1", "SI2", "I1", "I2"]
-        min_idx = clarity_order.index(filters["clarity_min"].upper())
-        max_idx = clarity_order.index(filters["clarity_max"].upper())
-        df = df[df["Clarity"].fillna("").str.upper().isin(clarity_order[min_idx:max_idx+1])]
-
-    if "fluorescence" in filters:
-        df = df[df["Fluo."].fillna("").str.upper().isin([f.upper() for f in filters["fluorescence"]])]
-
-    if "cut" in filters:
-        df = df[df["Cut"].fillna("").str.upper().isin([c.upper() for c in filters["cut"]])]
-
-    if "polish" in filters:
-        df = df[df["Pol"].fillna("").str.upper().isin([p.upper() for p in filters["polish"]])]
-
-    if "symmetry" in filters:
-        df = df[df["Sym"].fillna("").str.upper().isin([s.upper() for s in filters["symmetry"]])]
-
-    if "td_min" in filters and "td_max" in filters:
-        df = df[(df["Total Depth"] >= filters["td_min"]) & (df["Total Depth"] <= filters["td_max"])]
-
-    if "table_min" in filters and "table_max" in filters:
-        df = df[(df["Table Size"] >= filters["table_min"]) & (df["Table Size"] <= filters["table_max"])]
-
-    if "pavilion_max" in filters:
-        df = df[df["Pavilllion Depth"] <= filters["pavilion_max"]]
-
-    if "crown_max" in filters:
-        df = df[df["Crown Height"] <= filters["crown_max"]]
-
-    if "girdle" in filters:
-        df = df[df["GirdleThickness Type"].fillna("").str.upper().isin([g.upper() for g in filters["girdle"]])]
-
-    if "culet" in filters:
-        df = df[df["Culet"].fillna("").str.upper().isin([c.upper() for c in filters["culet"]])]
-
-    return df.reset_index(drop=True)
-
 @app.route('/generate', methods=['POST'])
 def generate():
     data = request.get_json()
@@ -114,12 +52,124 @@ def generate():
     if df is None:
         return jsonify({"error": "Could not load inventory"}), 500
 
-    filtered_df = filter_inventory(df, filters)
-    if filtered_df.empty:
+    df_filtered = df.copy()
+
+    # Shape aliases
+    shape_aliases = {
+        "CU": ["CU", "CB"],
+        "CB": ["CU", "CB"],
+        "AS": ["AS", "SQEM"],
+        "SQEM": ["AS", "SQEM"],
+        "RD": ["RD"],
+        "EM": ["EM"],
+        "PR": ["PR"],
+        "OV": ["OV"],
+        "PS": ["PS"],
+        "RAD": ["RAD"]
+    }
+
+    # Color scale
+    color_order = ["D", "E", "F", "G", "H", "I", "J", "K", "L", "M"]
+
+    # Clarity scale
+    clarity_order = ["IF", "VVS1", "VVS2", "VS1", "VS2", "SI1", "SI2", "SI3", "I1", "I2", "I3"]
+
+    # Fluorescence map
+    fluo_map = {
+        "NONE": "NON", "NON": "NON",
+        "FAINT": "FNT", "FNT": "FNT",
+        "MEDIUM": "MED", "MED": "MED",
+        "STRONG": "STG", "STG": "STG", "STR": "STG",
+        "VERY STRONG": "VST", "VST": "VST"
+    }
+
+    # Apply filters
+    if filters.get("certified") is True:
+        df_filtered = df_filtered[df_filtered["Lab Name"].notna()]
+
+    if "lab" in filters:
+        df_filtered = df_filtered[df_filtered["Lab Name"].isin(filters["lab"])]
+
+    if "shape" in filters:
+        shape_vals = []
+        for shp in filters["shape"]:
+            shape_vals.extend(shape_aliases.get(shp.upper(), [shp.upper()]))
+        df_filtered = df_filtered[df_filtered["Shape"].isin(shape_vals)]
+
+    if "size_min" in filters:
+        df_filtered = df_filtered[df_filtered["Cts"] >= filters["size_min"]]
+
+    if "size_max" in filters:
+        df_filtered = df_filtered[df_filtered["Cts"] <= filters["size_max"]]
+
+    if "color_min" in filters and "color_max" in filters:
+        min_idx = color_order.index(filters["color_min"].upper())
+        max_idx = color_order.index(filters["color_max"].upper())
+        allowed = color_order[min_idx:max_idx+1]
+        df_filtered = df_filtered[df_filtered["Color"].isin(allowed)]
+
+    if "clarity_min" in filters and "clarity_max" in filters:
+        min_idx = clarity_order.index(filters["clarity_min"].upper())
+        max_idx = clarity_order.index(filters["clarity_max"].upper())
+        allowed = clarity_order[min_idx:max_idx+1]
+        df_filtered = df_filtered[df_filtered["Clarity"].isin(allowed)]
+
+    if "cut" in filters:
+        df_filtered = df_filtered[df_filtered["Cut"].isin(filters["cut"])]
+
+    if "polish" in filters:
+        df_filtered = df_filtered[df_filtered["Pol"].isin(filters["polish"])]
+
+    if "symmetry" in filters:
+        df_filtered = df_filtered[df_filtered["Sym"].isin(filters["symmetry"])]
+
+    if "fluorescence" in filters:
+        values = [fluo_map.get(f.upper(), f.upper()) for f in filters["fluorescence"]]
+        df_filtered = df_filtered[df_filtered["Fluo."].isin(values)]
+
+    if "discount_min" in filters:
+        df_filtered = df_filtered[df_filtered["Discount"] >= filters["discount_min"]]
+
+    if "discount_max" in filters:
+        df_filtered = df_filtered[df_filtered["Discount"] <= filters["discount_max"]]
+
+    if "ppc_min" in filters:
+        df_filtered = df_filtered[df_filtered["PPC"] >= filters["ppc_min"]]
+
+    if "ppc_max" in filters:
+        df_filtered = df_filtered[df_filtered["PPC"] <= filters["ppc_max"]]
+
+    if "total_min" in filters:
+        df_filtered = df_filtered[df_filtered["Total Value"] >= filters["total_min"]]
+
+    if "total_max" in filters:
+        df_filtered = df_filtered[df_filtered["Total Value"] <= filters["total_max"]]
+
+    for col in ["Total Depth", "Table Size", "Crown Angle", "Crown Height", "Pavilion Angle", "Pavilllion Depth"]:
+        min_key = col.lower().replace(" ", "_") + "_min"
+        max_key = col.lower().replace(" ", "_") + "_max"
+        if min_key in filters:
+            df_filtered = df_filtered[df_filtered[col] >= filters[min_key]]
+        if max_key in filters:
+            df_filtered = df_filtered[df_filtered[col] <= filters[max_key]]
+
+    if "girdle_type" in filters:
+        df_filtered = df_filtered[df_filtered["GirdleThickness Type"].isin(filters["girdle_type"])]
+
+    if "girdle_percent_min" in filters:
+        df_filtered = df_filtered[df_filtered["GirdleThickness Percent"] >= filters["girdle_percent_min"]]
+
+    if "girdle_percent_max" in filters:
+        df_filtered = df_filtered[df_filtered["GirdleThickness Percent"] <= filters["girdle_percent_max"]]
+
+    if "culet" in filters:
+        df_filtered = df_filtered[df_filtered["Culet"].isin(filters["culet"])]
+
+    if df_filtered.empty:
         return jsonify({"error": "No matching stones"}), 404
 
     filename = f"filtered_{uuid.uuid4().hex[:8]}.xlsx"
-    filtered_df.to_excel(filename, index=False)
+    df_filtered.to_excel(filename, index=False)
 
     file_metadata = {
         'name': filename,
