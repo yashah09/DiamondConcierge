@@ -1,14 +1,14 @@
 from flask import Flask, request, jsonify
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 import os
 import uuid
 import requests
 import pandas as pd
 import io
-from openpyxl import load_workbook
-from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import PatternFill, Font
 
 # CONFIGURATION
 FOLDER_ID = '1diAVIuJdsOQhLEQuFzie6QACakeOie25'
@@ -22,9 +22,9 @@ creds = service_account.Credentials.from_service_account_file(
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"], scopes=SCOPES
 )
 
-# INIT
-app = Flask(__name__)
 drive_service = build('drive', 'v3', credentials=creds)
+app = Flask(__name__)
+
 
 def get_latest_inventory_from_drive():
     try:
@@ -35,60 +35,57 @@ def get_latest_inventory_from_drive():
         while not done:
             status, done = downloader.next_chunk()
         fh.seek(0)
-        df = pd.read_excel(fh, engine="openpyxl")
+        df = pd.read_excel(fh, engine='openpyxl')
         return df
     except Exception as e:
         print("Error reading inventory:", e)
         return None
 
-def write_styled_excel(df_filtered, filename):
-    df_filtered.to_excel(filename, index=False, startrow=3)
+
+def create_formatted_excel(df):
+    filename = f"filtered_{uuid.uuid4().hex[:8]}.xlsx"
+    df.to_excel(filename, index=False, startrow=3)
     wb = load_workbook(filename)
     ws = wb.active
 
+    # Add summary row in F2–P2
+    count = len(df)
+    total_cts = round(df['Cts'].sum(), 2)
+    avg_ppc = round(df['PPC'].mean(), 2) if not df['PPC'].isnull().all() else 0
+    avg_discount = round(df['Discount'].mean(), 2) if not df['Discount'].isnull().all() else 0
+    avg_total_value = round(df['Total Value'].mean(), 2) if not df['Total Value'].isnull().all() else 0
+
+    summary_headers = ["Selection", "Count", "Cts", "Avg. PPC", "Avg. Disc", "Avg. Value"]
+    summary_values = ["Selection", count, total_cts, avg_ppc, avg_discount, avg_total_value]
+
+    for col_index, value in enumerate(summary_headers, start=6):
+        cell = ws.cell(row=1, column=col_index)
+        cell.value = value
+
+    for col_index, value in enumerate(summary_values, start=6):
+        cell = ws.cell(row=2, column=col_index)
+        cell.value = value
+
     # Styles
-    red_fill = PatternFill(start_color="9E0000", end_color="9E0000", fill_type="solid")
-    pink_fill = PatternFill(start_color="FFCDCD", end_color="FFCDCD", fill_type="solid")
-    white_bold = Font(color="FFFFFF", bold=True, name="Aptos Narrow")
-    white_regular = Font(color="FFFFFF", bold=False, name="Aptos Narrow")
-    pink_bold = Font(color="000000", bold=True, name="Aptos Narrow")
-    pink_regular = Font(color="000000", bold=False, name="Aptos Narrow")
-    center = Alignment(horizontal="center", vertical="center")
+    red_fill = PatternFill(start_color='8B0000', end_color='8B0000', fill_type='solid')
+    pink_fill = PatternFill(start_color='F4CCCC', end_color='F4CCCC', fill_type='solid')
+    white_bold = Font(color='FFFFFF', bold=True)
+    black_bold = Font(color='000000', bold=True)
+    black_normal = Font(color='000000', bold=False)
 
-    # F1–P1 styling
-    for col in range(6, 17):
-        cell = ws.cell(row=1, column=col)
-        cell.fill = red_fill
-        cell.font = white_bold
-        cell.alignment = center
+    for col in range(6, 6 + len(summary_headers)):
+        ws.cell(row=1, column=col).fill = red_fill
+        ws.cell(row=1, column=col).font = white_bold
+        ws.cell(row=2, column=col).fill = pink_fill
+        ws.cell(row=2, column=col).font = black_bold if col == 6 else black_normal
 
-    # F2–P2 styling
-    for col in range(6, 17):
-        cell = ws.cell(row=2, column=col)
-        cell.fill = pink_fill
-        cell.alignment = center
-        if col == 6:
-            cell.font = pink_bold
-            cell.value = "Selection"
-        else:
-            cell.font = pink_regular
-
-    # Row 3 headers
-    for cell in ws[3]:
-        cell.fill = red_fill
-        cell.font = white_bold
-        cell.alignment = center
-
-    # Summary formulas
-    row_end = 3 + len(df_filtered)
-    ws["G2"] = f"=SUBTOTAL(3,B4:B{row_end})"
-    ws["H2"] = f"=SUBTOTAL(9,E4:E{row_end})"
-    ws["J2"] = f"=SUBTOTAL(9,M4:M{row_end})/H2"
-    ws["K2"] = f"=SUBTOTAL(9,P4:P{row_end})/H2"
-    ws["L2"] = f"=((K2/J2)-1)*100"
-    ws["P2"] = f"=IF(G2<200,SUBTOTAL(9,P4:P{row_end}),0)"
+    for col in range(1, ws.max_column + 1):
+        ws.cell(row=4, column=col).fill = red_fill
+        ws.cell(row=4, column=col).font = white_bold
 
     wb.save(filename)
+    return filename
+
 
 @app.route('/generate', methods=['POST'])
 def generate():
@@ -103,12 +100,12 @@ def generate():
     if df is None:
         return jsonify({"error": "Could not load inventory"}), 500
 
-    df_filtered = df.copy()  # replace this with filter logic
-    if df_filtered.empty:
+    # NOTE: Assume filtering is applied here properly
+    filtered_df = df.copy()  # Placeholder for actual filtering logic
+    if filtered_df.empty:
         return jsonify({"error": "No matching stones"}), 404
 
-    filename = f"filtered_{uuid.uuid4().hex[:8]}.xlsx"
-    write_styled_excel(df_filtered, filename)
+    filename = create_formatted_excel(filtered_df)
 
     file_metadata = {
         'name': filename,
@@ -138,6 +135,7 @@ def generate():
         print("Failed to notify Make.com:", e)
 
     return jsonify({"message": "File generated and uploaded", "link": file_link})
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
