@@ -76,7 +76,7 @@ def beautify_excel(path, summary):
     ws["G2"] = "=SUBTOTAL(3,B4:B4000)"
     ws["H2"] = "=SUBTOTAL(9,E4:E4000)"
     ws["J2"] = "=SUBTOTAL(9,M4:M4000)/H2"
-    ws["K2"] = "=SUBTOTAL(9,O4:O4000)/H2"
+    ws["K2"] = "=SUBTOTAL(9,P4:P4000)/H2"
     ws["L2"] = "=((K2/J2)-1)*100"
     ws["P2"] = "=IF(G2<200,SUBTOTAL(9,P4:P4000),0)"
 
