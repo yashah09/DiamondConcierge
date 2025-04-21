@@ -156,7 +156,7 @@ def generate():
 
     summary = summarize(filtered_df)
     filename = f"filtered_{uuid.uuid4().hex[:6]}.xlsx"
-    filtered_df.to_excel(filename, index=False, startrow=3)
+    filtered_df.to_excel(filename, index=False, startrow=1)
     beautify_excel(filename)
 
     metadata = {"name": filename, "parents": [FOLDER_ID]}
