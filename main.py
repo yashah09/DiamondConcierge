@@ -59,7 +59,6 @@ def beautify_excel(path, summary):
         bottom=Side(border_style="thin", color="000000")
     )
 
-    # Row 1: Titles
     headers = ["", "Stones", "Carats", "", "Rap Avg", "PPC Avg", "Avg Disc", "", "", "", "Total Value"]
     for col, header in enumerate(headers, start=6):
         cell = ws.cell(row=1, column=col)
@@ -68,7 +67,6 @@ def beautify_excel(path, summary):
         cell.font = white_bold_font
         cell.border = border_style
 
-    # Row 2: Formulas and labels
     ws["F2"] = "Selection"
     ws["G2"] = "=SUBTOTAL(3,B4:B4000)"
     ws["H2"] = "=SUBTOTAL(9,E4:E4000)"
@@ -83,14 +81,12 @@ def beautify_excel(path, summary):
         cell.font = black_bold_font if col == 6 else black_font
         cell.border = border_style
 
-    # Row 3: Column Headers
     for col in range(1, ws.max_column + 1):
         cell = ws.cell(row=3, column=col)
         cell.fill = dark_red_fill
         cell.font = white_bold_font
         cell.border = border_style
 
-    # Format ranges
     for row in range(4, 4001):
         ws[f"E{row}"].number_format = "0.00"
         ws[f"N{row}"].number_format = "0.00"
@@ -178,6 +174,10 @@ def summarize(df):
 def generate():
     try:
         data = request.get_json()
+        if data is None:
+            print("❌ No JSON received. Did you forget the Content-Type header?")
+            return jsonify({"error": "No JSON received"}), 400
+
         print("📥 Incoming JSON:", data)
 
         email = data.get("email")
