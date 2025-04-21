@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 import os
 import io
 import uuid
@@ -16,7 +16,6 @@ INVENTORY_FILE_ID = '1McHVVICDeeMRiA1fRU7inHmbSUCzeOD2'
 MAKE_WEBHOOK_URL = 'https://hook.eu2.make.com/h6jsruunr7u01wobm995dj8wtcmafph8'
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
-# AUTHENTICATION
 creds = service_account.Credentials.from_service_account_file(
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"], scopes=SCOPES
 )
@@ -81,8 +80,25 @@ def filter_inventory(df, filters):
         }
         valid_vals = []
         for code in filters["fluorescence"]:
-            valid_vals.extend(flour_map.get(code.upper(), [code]))
+            for key, aliases in flour_map.items():
+                if code.upper() in aliases or code.upper() == key:
+                    valid_vals.extend(aliases)
         df = df[df["Fluo."].fillna('').str.upper().isin([v.upper() for v in valid_vals])]
+
+    if "discount_max" in filters:
+        df = df[df["Discount"] <= filters["discount_max"]]
+    if "discount_min" in filters:
+        df = df[df["Discount"] >= filters["discount_min"]]
+
+    if "ppc_max" in filters:
+        df = df[df["PPC"] <= filters["ppc_max"]]
+    if "ppc_min" in filters:
+        df = df[df["PPC"] >= filters["ppc_min"]]
+
+    if "td_min" in filters and "td_max" in filters:
+        df = df[(df["Total Depth"] >= filters["td_min"]) & (df["Total Depth"] <= filters["td_max"])]
+    if "table_min" in filters and "table_max" in filters:
+        df = df[(df["Table Size"] >= filters["table_min"]) & (df["Table Size"] <= filters["table_max"])]
 
     return df.reset_index(drop=True)
 
@@ -96,47 +112,39 @@ def summarize(df):
         "total_value": round(df["Total Value"].sum(), 2)
     }
 
-def beautify_excel(path, summary):
-    from openpyxl import load_workbook
+def beautify_excel(path):
     wb = load_workbook(path)
     ws = wb.active
-
-    ws.insert_rows(1, amount=3)
+    ws.insert_rows(1, amount=2)
 
     red_fill = PatternFill(start_color="8B0000", end_color="8B0000", fill_type="solid")
     pink_fill = PatternFill(start_color="F4CCCC", end_color="F4CCCC", fill_type="solid")
-    white_bold = Font(color="FFFFFF", bold=True)
-    black = Font(bold=False)
+    white_bold = Font(color="FFFFFF", bold=True, name="Aptos Narrow", size=11)
+    black_font = Font(color="000000", name="Aptos Narrow", size=11)
 
-    for col in range(6, 17):
+    headers = ["", "Stones", "Carats", "", "Rap Average", "PPC Average", "Avg Disc", "", "", "", "Total Value"]
+    formulas = [
+        "Selection", "=SUBTOTAL(3,B4:B3153)", "=SUBTOTAL(9,E4:E3153)", "",
+        "=SUBTOTAL(9,M4:M3153)/H2", "=SUBTOTAL(9,P4:P3153)/H2", "=((K2/J2)-1)*100",
+        "", "", "", "=IF(G2<200,SUBTOTAL(9,P4:P3153),0)"
+    ]
+
+    for i in range(11):
+        col = 6 + i
+        ws.cell(row=1, column=col, value=headers[i])
         ws.cell(row=1, column=col).fill = red_fill
         ws.cell(row=1, column=col).font = white_bold
 
-    labels = ["Selection", "Stones", "Carats", "Rap Ave", "PPC Ave", "Avg Disc", "", "", "", "Total Val"]
-    for i, label in enumerate(labels):
-        cell = ws.cell(row=2, column=6 + i)
-        cell.value = label
+        cell = ws.cell(row=2, column=col)
         cell.fill = pink_fill
-        cell.font = Font(bold=(i == 0))
-
-    values = [
-        None,
-        f"=SUBTOTAL(3,B4:B3153)",
-        f"=SUBTOTAL(9,E4:E3153)",
-        f"=SUBTOTAL(9,M4:M3153)/H2",
-        f"=SUBTOTAL(9,P4:P3153)/H2",
-        f"=((K2/J2)-1)*100",
-        None, None, None,
-        f"=IF(G2<200,SUBTOTAL(9,P4:P3153),0)"
-    ]
-    for i, val in enumerate(values):
-        cell = ws.cell(row=3, column=6 + i)
-        cell.value = val
-        cell.fill = pink_fill
+        if formulas[i]:
+            cell.value = formulas[i]
+        cell.font = Font(bold=(col == 6), name="Aptos Narrow", size=11, color="000000")
 
     for col in range(1, ws.max_column + 1):
-        ws.cell(row=4, column=col).fill = red_fill
-        ws.cell(row=4, column=col).font = white_bold
+        cell = ws.cell(row=3, column=col)
+        cell.fill = red_fill
+        cell.font = Font(color="FFFFFF", name="Aptos Narrow", size=11, bold=False)
 
     wb.save(path)
 
@@ -160,7 +168,7 @@ def generate():
     summary = summarize(filtered_df)
     filename = f"filtered_{uuid.uuid4().hex[:6]}.xlsx"
     filtered_df.to_excel(filename, index=False)
-    beautify_excel(filename, summary)
+    beautify_excel(filename)
 
     metadata = {"name": filename, "parents": [FOLDER_ID]}
     media = MediaFileUpload(filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -173,8 +181,8 @@ def generate():
 
     try:
         requests.post(MAKE_WEBHOOK_URL, json={"email": email, "file_link": link, "file_name": filename})
-    except Exception as e:
-        print("Webhook failed:", e)
+    except:
+        pass
 
     return jsonify({"message": "File filtered", "summary": summary, "link": link})
 
