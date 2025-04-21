@@ -26,6 +26,10 @@ drive_service = build('drive', 'v3', credentials=creds)
 # INIT
 app = Flask(__name__)
 
+@app.before_request
+def catch_all_errors():
+    print(f"🛬 Incoming request: {request.method} {request.path}")
+
 def get_latest_inventory_from_drive():
     try:
         request = drive_service.files().get_media(fileId=INVENTORY_FILE_ID)
@@ -175,7 +179,6 @@ def generate():
     try:
         print("🔥 /generate endpoint HIT")
         print("🧪 Raw payload:", request.data)
-        ...
         data = request.get_json()
         if data is None:
             print("❌ No JSON received. Did you forget the Content-Type header?")
