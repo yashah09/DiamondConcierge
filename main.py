@@ -12,9 +12,9 @@ from openpyxl.styles import PatternFill, Font, Border, Side
 from openpyxl.utils import get_column_letter
 
 # CONFIGURATION
-FOLDER_ID = '1diAVIuJdsOQhLEQuFzie6QACakeOie25'
+FOLDER_ID = '17gPLesM8wfEbJCJsNbHXGsCRh9qw9ezx'
 MAKE_WEBHOOK_URL = 'https://hook.eu2.make.com/h6jsruunr7u01wobm995dj8wtcmafph8'
-INVENTORY_FILE_ID = '1McHVVICDeeMRiA1fRU7inHmbSUCzeOD2'
+INVENTORY_FILE_ID = '1ZvrrL85WuKh37KJ-DT3drf31cQOS38Va'
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
 # AUTH
