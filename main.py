@@ -173,6 +173,7 @@ def summarize(df):
 @app.route("/generate", methods=["POST"])
 def generate():
     try:
+        print("🧪 Raw payload:", request.data)
         data = request.get_json()
         if data is None:
             print("❌ No JSON received. Did you forget the Content-Type header?")
