@@ -18,23 +18,24 @@ INVENTORY_FILE_ID = '1ZvrrL85WuKh37KJ-DT3drf31cQOS38Va'
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
 # AUTH
-creds = service_account.Credentials.from_service_account_file(
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"], scopes=SCOPES
-)
+try:
+    creds_path = os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
+    print("🔐 Using credentials at:", creds_path)
+    creds = service_account.Credentials.from_service_account_file(creds_path, scopes=SCOPES)
+except Exception as e:
+    print("❌ Failed to load Google credentials:", e)
+    raise
+
 drive_service = build('drive', 'v3', credentials=creds)
 
 # INIT
 app = Flask(__name__)
 
-@app.before_request
-def catch_all_errors():
-    print(f"🛬 Incoming request: {request.method} {request.path}")
-
 def get_latest_inventory_from_drive():
     try:
-        request_file = drive_service.files().get_media(fileId=INVENTORY_FILE_ID)
+        request_drive = drive_service.files().get_media(fileId=INVENTORY_FILE_ID)
         fh = io.BytesIO()
-        downloader = MediaIoBaseDownload(fh, request_file)
+        downloader = MediaIoBaseDownload(fh, request_drive)
         done = False
         while not done:
             _, done = downloader.next_chunk()
@@ -178,9 +179,9 @@ def summarize(df):
 def generate():
     try:
         print("🔥 /generate endpoint HIT")
-        print("🧪 Raw payload:", request.data)
-
+        print("📦 Raw payload:", request.data)
         data = request.get_json()
+
         if data is None:
             print("❌ No JSON received. Did you forget the Content-Type header?")
             return jsonify({"error": "No JSON received"}), 400
@@ -191,17 +192,14 @@ def generate():
         filters = data.get("filters", {})
 
         if not email:
-            print("❌ Email missing in request")
             return jsonify({"error": "Missing email"}), 400
 
         df = get_latest_inventory_from_drive()
         if df is None:
-            print("❌ Could not load inventory")
             return jsonify({"error": "Could not load inventory"}), 500
 
         filtered_df = filter_inventory(df, filters)
         if filtered_df.empty:
-            print("❌ No matching stones")
             return jsonify({"error": "No matching stones"}), 404
 
         filename = f"filtered_{uuid.uuid4().hex[:6]}.xlsx"
@@ -217,19 +215,16 @@ def generate():
         link = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
         os.remove(filename)
 
-        print(f"✅ File uploaded: {link}")
-
         try:
             requests.post(MAKE_WEBHOOK_URL, json={"email": email, "file_link": link, "file_name": filename})
-            print("📤 Webhook sent")
         except Exception as e:
-            print("⚠️ Webhook error:", e)
+            print("Webhook POST failed:", e)
 
         return jsonify({"message": "File filtered", "summary": summarize(filtered_df), "link": link})
 
     except Exception as e:
-        print("❌ UNHANDLED ERROR in /generate:", str(e))
-        return jsonify({"error": "Internal Server Error", "details": str(e)}), 500
+        print("Unhandled error:", e)
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
