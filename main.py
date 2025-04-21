@@ -13,7 +13,7 @@ from openpyxl.utils import get_column_letter
 
 # CONFIGURATION
 FOLDER_ID = '17gPLesM8wfEbJCJsNbHXGsCRh9qw9ezx'
-MAKE_WEBHOOK_URL = 'https://hook.eu2.make.com/h6jsruunr7u01wobm995dj8wtcmafph8'
+MAKE_WEBHOOK_URL = 'https://hook.us2.make.com/8p08qs7c5af35g9t1iy6nuvbplhmyqpq'
 INVENTORY_FILE_ID = '1ZvrrL85WuKh37KJ-DT3drf31cQOS38Va'
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
