@@ -9,6 +9,7 @@ import requests
 import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Font
+from openpyxl.utils import get_column_letter
 
 # CONFIGURATION
 FOLDER_ID = '1diAVIuJdsOQhLEQuFzie6QACakeOie25'
@@ -38,45 +39,40 @@ def get_latest_inventory_from_drive():
         print("Error loading inventory:", e)
         return None
 
-def beautify_excel(path, summary):
+def beautify_excel(path):
     wb = load_workbook(path)
     ws = wb.active
 
-    # Shift data down by 2 rows
     ws.insert_rows(1, amount=2)
 
-    # Title row (F1:P1)
-    dark_red_fill = PatternFill(start_color="8B0000", end_color="8B0000", fill_type="solid")
-    white_bold_font = Font(color="FFFFFF", bold=True, name="Aptos Narrow", size=11)
-    for col in range(6, 17):
-        cell = ws.cell(row=1, column=col)
-        cell.fill = dark_red_fill
-        cell.font = white_bold_font
+    red_fill = PatternFill(start_color="8B0000", end_color="8B0000", fill_type="solid")
+    pink_fill = PatternFill(start_color="F4CCCC", end_color="F4CCCC", fill_type="solid")
+    white_bold = Font(color="FFFFFF", bold=True, name="Aptos Narrow", size=11)
+    black_font = Font(color="000000", name="Aptos Narrow", size=11)
+    bold_black_font = Font(color="000000", bold=True, name="Aptos Narrow", size=11)
 
-    labels = ["", "Stones", "Carats", "", "Rap Average", "PPC Average", "Avg Disc", "", "", "", "Total Value"]
-    for i, label in enumerate(labels):
-        cell = ws.cell(row=1, column=6 + i)
-        cell.value = label if label else None
+    headers = ["", "Stones", "Carats", "", "Rap Average", "PPC Average", "Avg Disc", "", "", "", "Total Value"]
+    formulas = [
+        "Selection", "=SUBTOTAL(3,B4:B3153)", "=SUBTOTAL(9,E4:E3153)", "",
+        "=SUBTOTAL(9,M4:M3153)/H2", "=SUBTOTAL(9,P4:P3153)/H2", "=((K2/J2)-1)*100",
+        "", "", "", "=IF(G2<200,SUBTOTAL(9,P4:P3153),0)"
+    ]
 
-    # Values row (F2:P2)
-    light_pink_fill = PatternFill(start_color="F4CCCC", end_color="F4CCCC", fill_type="solid")
-    for col in range(6, 17):
+    for i in range(11):
+        col = 6 + i
+        ws.cell(row=1, column=col, value=headers[i])
+        ws.cell(row=1, column=col).fill = red_fill
+        ws.cell(row=1, column=col).font = white_bold
+
         cell = ws.cell(row=2, column=col)
-        cell.fill = light_pink_fill
-        cell.font = Font(bold=(col == 6), name="Aptos Narrow", size=11)
+        if formulas[i]:
+            cell.value = formulas[i]
+        cell.fill = pink_fill
+        cell.font = bold_black_font if i == 0 else black_font
 
-    ws["F2"] = "Selection"
-    ws["G2"] = summary["stones"]
-    ws["H2"] = round(summary["carats"], 2)
-    ws["J2"] = round(summary["rap_avg"], 2)
-    ws["K2"] = round(summary["ppc_avg"], 2)
-    ws["L2"] = round(summary["disc_avg"], 2)
-    ws["P2"] = round(summary["total_value"], 2)
-
-    # Header Row (Row 3)
     for col in range(1, ws.max_column + 1):
         cell = ws.cell(row=3, column=col)
-        cell.fill = dark_red_fill
+        cell.fill = red_fill
         cell.font = Font(color="FFFFFF", bold=False, name="Aptos Narrow", size=11)
 
     wb.save(path)
@@ -129,21 +125,6 @@ def filter_inventory(df, filters):
                     valid_vals.extend(aliases)
         df = df[df["Fluo."].fillna('').str.upper().isin([v.upper() for v in valid_vals])]
 
-    if "discount_max" in filters:
-        df = df[df["Discount"] <= filters["discount_max"]]
-    if "discount_min" in filters:
-        df = df[df["Discount"] >= filters["discount_min"]]
-
-    if "ppc_max" in filters:
-        df = df[df["PPC"] <= filters["ppc_max"]]
-    if "ppc_min" in filters:
-        df = df[df["PPC"] >= filters["ppc_min"]]
-
-    if "td_min" in filters and "td_max" in filters:
-        df = df[(df["Total Depth"] >= filters["td_min"]) & (df["Total Depth"] <= filters["td_max"])]
-    if "table_min" in filters and "table_max" in filters:
-        df = df[(df["Table Size"] >= filters["table_min"]) & (df["Table Size"] <= filters["table_max"])]
-
     return df.reset_index(drop=True)
 
 def summarize(df):
@@ -175,8 +156,8 @@ def generate():
 
     summary = summarize(filtered_df)
     filename = f"filtered_{uuid.uuid4().hex[:6]}.xlsx"
-    filtered_df.to_excel(filename, index=False)
-    beautify_excel(filename, summary)
+    filtered_df.to_excel(filename, index=False, startrow=3)
+    beautify_excel(filename)
 
     metadata = {"name": filename, "parents": [FOLDER_ID]}
     media = MediaFileUpload(filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
