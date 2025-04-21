@@ -8,19 +8,22 @@ import uuid
 import requests
 import pandas as pd
 from openpyxl import load_workbook
-from openpyxl.styles import PatternFill, Font
+from openpyxl.styles import PatternFill, Font, Border, Side
+from openpyxl.utils import get_column_letter
 
 # CONFIGURATION
 FOLDER_ID = '1diAVIuJdsOQhLEQuFzie6QACakeOie25'
-INVENTORY_FILE_ID = '1McHVVICDeeMRiA1fRU7inHmbSUCzeOD2'
 MAKE_WEBHOOK_URL = 'https://hook.eu2.make.com/h6jsruunr7u01wobm995dj8wtcmafph8'
+INVENTORY_FILE_ID = '1McHVVICDeeMRiA1fRU7inHmbSUCzeOD2'
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
+# AUTH
 creds = service_account.Credentials.from_service_account_file(
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"], scopes=SCOPES
 )
 drive_service = build('drive', 'v3', credentials=creds)
 
+# INIT
 app = Flask(__name__)
 
 def get_latest_inventory_from_drive():
@@ -32,14 +35,81 @@ def get_latest_inventory_from_drive():
         while not done:
             _, done = downloader.next_chunk()
         fh.seek(0)
-        return pd.read_excel(fh, engine="openpyxl")
+        df = pd.read_excel(fh, engine="openpyxl")
+        return df
     except Exception as e:
-        print("Error reading inventory:", e)
+        print("Error loading inventory:", e)
         return None
+
+def beautify_excel(path, summary):
+    wb = load_workbook(path)
+    ws = wb.active
+
+    ws.insert_rows(1, amount=3)
+
+    dark_red_fill = PatternFill(start_color="8B0000", end_color="8B0000", fill_type="solid")
+    white_bold_font = Font(color="FFFFFF", bold=True, name="Aptos Narrow", size=11)
+    pink_fill = PatternFill(start_color="F4CCCC", end_color="F4CCCC", fill_type="solid")
+    black_font = Font(color="000000", name="Aptos Narrow", size=11)
+    black_bold_font = Font(color="000000", bold=True, name="Aptos Narrow", size=11)
+    border_style = Border(
+        left=Side(border_style="thin", color="000000"),
+        right=Side(border_style="thin", color="000000"),
+        top=Side(border_style="thin", color="000000"),
+        bottom=Side(border_style="thin", color="000000")
+    )
+
+    # Row 1: Titles
+    headers = ["", "Stones", "Carats", "", "Rap Avg", "PPC Avg", "Avg Disc", "", "", "", "Total Value"]
+    for col, header in enumerate(headers, start=6):
+        cell = ws.cell(row=1, column=col)
+        cell.value = header if header else None
+        cell.fill = dark_red_fill
+        cell.font = white_bold_font
+        cell.border = border_style
+
+    # Row 2: Formulas and labels
+    ws["F2"] = "Selection"
+    ws["G2"] = "=SUBTOTAL(3,B4:B4000)"
+    ws["H2"] = "=SUBTOTAL(9,E4:E4000)"
+    ws["J2"] = "=SUBTOTAL(9,M4:M4000)/H2"
+    ws["K2"] = "=SUBTOTAL(9,O4:O4000)/H2"
+    ws["L2"] = "=((K2/J2)-1)*100"
+    ws["P2"] = "=IF(G2<200,SUBTOTAL(9,P4:P4000),0)"
+
+    for col in range(6, 17):
+        cell = ws.cell(row=2, column=col)
+        cell.fill = pink_fill
+        cell.font = black_bold_font if col == 6 else black_font
+        cell.border = border_style
+
+    # Row 3: Column Headers
+    for col in range(1, ws.max_column + 1):
+        cell = ws.cell(row=3, column=col)
+        cell.fill = dark_red_fill
+        cell.font = white_bold_font
+        cell.border = border_style
+
+    # Format ranges
+    for row in range(4, 4001):
+        ws[f"E{row}"].number_format = "0.00"  # Carats
+        ws[f"N{row}"].number_format = "0.00"  # Discount
+        ws[f"O{row}"].number_format = "0"     # PPC
+        ws[f"P{row}"].number_format = "0"     # Total Value
+        for col in range(1, ws.max_column + 1):
+            ws.cell(row=row, column=col).border = border_style
+
+    # Format summary row cells
+    ws["H2"].number_format = "0.00"
+    ws["J2"].number_format = "0"
+    ws["K2"].number_format = "0"
+    ws["L2"].number_format = "0.00"
+    ws["P2"].number_format = "0"
+
+    wb.save(path)
 
 def filter_inventory(df, filters):
     df = df.copy()
-
     shape_map = {
         "CU": "Cushion", "CB": "Cushion", "AS": "Asscher", "SQEM": "Asscher",
         "RD": "Round", "PS": "Pear", "OV": "Oval", "EM": "Emerald", "PR": "Princess"
@@ -80,9 +150,7 @@ def filter_inventory(df, filters):
         }
         valid_vals = []
         for code in filters["fluorescence"]:
-            for key, aliases in flour_map.items():
-                if code.upper() in aliases or code.upper() == key:
-                    valid_vals.extend(aliases)
+            valid_vals.extend(flour_map.get(code.upper(), [code]))
         df = df[df["Fluo."].fillna('').str.upper().isin([v.upper() for v in valid_vals])]
 
     if "discount_max" in filters:
@@ -95,11 +163,6 @@ def filter_inventory(df, filters):
     if "ppc_min" in filters:
         df = df[df["PPC"] >= filters["ppc_min"]]
 
-    if "td_min" in filters and "td_max" in filters:
-        df = df[(df["Total Depth"] >= filters["td_min"]) & (df["Total Depth"] <= filters["td_max"])]
-    if "table_min" in filters and "table_max" in filters:
-        df = df[(df["Table Size"] >= filters["table_min"]) & (df["Table Size"] <= filters["table_max"])]
-
     return df.reset_index(drop=True)
 
 def summarize(df):
@@ -111,88 +174,6 @@ def summarize(df):
         "rap_avg": round(df["RAP Price"].mean(), 2),
         "total_value": round(df["Total Value"].sum(), 2)
     }
-
-def beautify_excel(path):
-    wb = load_workbook(path)
-    ws = wb.active
-    ws.insert_rows(1, amount=2)
-
-    red_fill = PatternFill(start_color="8B0000", end_color="8B0000", fill_type="solid")
-    pink_fill = PatternFill(start_color="F4CCCC", end_color="F4CCCC", fill_type="solid")
-    white_bold = Font(color="FFFFFF", bold=True, name="Aptos Narrow", size=11)
-    black_font = Font(color="000000", name="Aptos Narrow", size=11)
-
-    headers = ["", "Stones", "Carats", "", "Rap Average", "PPC Average", "Avg Disc", "", "", "", "Total Value"]
-    formulas = [
-        "Selection", "=SUBTOTAL(3,B4:B3153)", "=SUBTOTAL(9,E4:E3153)", "",
-        "=SUBTOTAL(9,M4:M3153)/H2", "=SUBTOTAL(9,P4:P3153)/H2", "=((K2/J2)-1)*100",
-        "", "", "", "=IF(G2<200,SUBTOTAL(9,P4:P3153),0)"
-    ]
-
-    for i in range(11):
-        col = 6 + i
-        ws.cell(row=1, column=col, value=headers[i])
-        ws.cell(row=1, column=col).fill = red_fill
-        ws.cell(row=1, column=col).font = white_bold
-
-        cell = ws.cell(row=2, column=col)
-        cell.fill = pink_fill
-        if formulas[i]:
-            cell.value = formulas[i]
-            if get_column_letter(col) == 'H':
-                cell.number_format = '0.00'
-            elif get_column_letter(col) in ['J', 'K']:
-                cell.number_format = '0'
-        cell.font = Font(bold=(col == 6), name="Aptos Narrow", size=11, color="000000")
-
-    for col in range(1, ws.max_column + 1):
-        cell = ws.cell(row=3, column=col)
-        cell.fill = red_fill
-        cell.font = Font(color="FFFFFF", name="Aptos Narrow", size=11, bold=False)
-
-    # Add borders to F1:P2 and A3:AF4000
-from openpyxl.styles.borders import Border, Side
-border_style = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
-
-# F1:P2 borders
-for row in range(1, 3):
-    for col in range(6, 17):
-        ws.cell(row=row, column=col).border = border_style
-
-# A3:AF4000 borders
-for row in range(3, 4001):
-    for col in range(1, 33):
-        ws.cell(row=row, column=col).border = border_style
-
-# Add borders to F1:P2 and A3:AF4000
-from openpyxl.styles.borders import Border, Side
-border_style = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
-
-# F1:P2 borders
-for row in range(1, 3):
-    for col in range(6, 17):
-        ws.cell(row=row, column=col).border = border_style
-
-# A3:AF4000 borders
-for row in range(3, 4001):
-    for col in range(1, 33):
-        ws.cell(row=row, column=col).border = border_style
-
-# Number formats for F2:P2
-ws['H2'].number_format = '0.00'
-ws['J2'].number_format = '0'
-ws['K2'].number_format = '0'
-ws['L2'].number_format = '0.00'
-ws['P2'].number_format = '0'
-
-# Data columns (E4:E4000 = carats), N4:N4000 = Discount %, O4:O4000 = PPC, P4:P4000 = Total Value
-for row in range(4, 4001):
-    ws[f'E{row}'].number_format = '0.00'
-    ws[f'N{row}'].number_format = '0.00'
-    ws[f'O{row}'].number_format = '0'
-    ws[f'P{row}'].number_format = '0'
-
-wb.save(path)
 
 @app.route("/generate", methods=["POST"])
 def generate():
@@ -211,10 +192,9 @@ def generate():
     if filtered_df.empty:
         return jsonify({"error": "No matching stones"}), 404
 
-    summary = summarize(filtered_df)
     filename = f"filtered_{uuid.uuid4().hex[:6]}.xlsx"
     filtered_df.to_excel(filename, index=False)
-    beautify_excel(filename)
+    beautify_excel(filename, summarize(filtered_df))
 
     metadata = {"name": filename, "parents": [FOLDER_ID]}
     media = MediaFileUpload(filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -230,7 +210,7 @@ def generate():
     except:
         pass
 
-    return jsonify({"message": "File filtered", "summary": summary, "link": link})
+    return jsonify({"message": "File filtered", "summary": summarize(filtered_df), "link": link})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
