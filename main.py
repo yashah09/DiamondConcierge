@@ -139,6 +139,10 @@ def beautify_excel(path):
         cell.fill = pink_fill
         if formulas[i]:
             cell.value = formulas[i]
+            if get_column_letter(col) == 'H':
+                cell.number_format = '0.00'
+            elif get_column_letter(col) in ['J', 'K']:
+                cell.number_format = '0'
         cell.font = Font(bold=(col == 6), name="Aptos Narrow", size=11, color="000000")
 
     for col in range(1, ws.max_column + 1):
@@ -146,7 +150,49 @@ def beautify_excel(path):
         cell.fill = red_fill
         cell.font = Font(color="FFFFFF", name="Aptos Narrow", size=11, bold=False)
 
-    wb.save(path)
+    # Add borders to F1:P2 and A3:AF4000
+from openpyxl.styles.borders import Border, Side
+border_style = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+
+# F1:P2 borders
+for row in range(1, 3):
+    for col in range(6, 17):
+        ws.cell(row=row, column=col).border = border_style
+
+# A3:AF4000 borders
+for row in range(3, 4001):
+    for col in range(1, 33):
+        ws.cell(row=row, column=col).border = border_style
+
+# Add borders to F1:P2 and A3:AF4000
+from openpyxl.styles.borders import Border, Side
+border_style = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+
+# F1:P2 borders
+for row in range(1, 3):
+    for col in range(6, 17):
+        ws.cell(row=row, column=col).border = border_style
+
+# A3:AF4000 borders
+for row in range(3, 4001):
+    for col in range(1, 33):
+        ws.cell(row=row, column=col).border = border_style
+
+# Number formats for F2:P2
+ws['H2'].number_format = '0.00'
+ws['J2'].number_format = '0'
+ws['K2'].number_format = '0'
+ws['L2'].number_format = '0.00'
+ws['P2'].number_format = '0'
+
+# Data columns (E4:E4000 = carats), N4:N4000 = Discount %, O4:O4000 = PPC, P4:P4000 = Total Value
+for row in range(4, 4001):
+    ws[f'E{row}'].number_format = '0.00'
+    ws[f'N{row}'].number_format = '0.00'
+    ws[f'O{row}'].number_format = '0'
+    ws[f'P{row}'].number_format = '0'
+
+wb.save(path)
 
 @app.route("/generate", methods=["POST"])
 def generate():
