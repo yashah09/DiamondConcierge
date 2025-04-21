@@ -92,14 +92,13 @@ def beautify_excel(path, summary):
 
     # Format ranges
     for row in range(4, 4001):
-        ws[f"E{row}"].number_format = "0.00"  # Carats
-        ws[f"N{row}"].number_format = "0.00"  # Discount
-        ws[f"O{row}"].number_format = "0"     # PPC
-        ws[f"P{row}"].number_format = "0"     # Total Value
+        ws[f"E{row}"].number_format = "0.00"
+        ws[f"N{row}"].number_format = "0.00"
+        ws[f"O{row}"].number_format = "0"
+        ws[f"P{row}"].number_format = "0"
         for col in range(1, ws.max_column + 1):
             ws.cell(row=row, column=col).border = border_style
 
-    # Format summary row cells
     ws["H2"].number_format = "0.00"
     ws["J2"].number_format = "0"
     ws["K2"].number_format = "0"
@@ -177,40 +176,56 @@ def summarize(df):
 
 @app.route("/generate", methods=["POST"])
 def generate():
-    data = request.get_json()
-    email = data.get("email")
-    filters = data.get("filters", {})
-
-    if not email:
-        return jsonify({"error": "Missing email"}), 400
-
-    df = get_latest_inventory_from_drive()
-    if df is None:
-        return jsonify({"error": "Could not load inventory"}), 500
-
-    filtered_df = filter_inventory(df, filters)
-    if filtered_df.empty:
-        return jsonify({"error": "No matching stones"}), 404
-
-    filename = f"filtered_{uuid.uuid4().hex[:6]}.xlsx"
-    filtered_df.to_excel(filename, index=False)
-    beautify_excel(filename, summarize(filtered_df))
-
-    metadata = {"name": filename, "parents": [FOLDER_ID]}
-    media = MediaFileUpload(filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    file = drive_service.files().create(body=metadata, media_body=media, fields='id').execute()
-    file_id = file.get("id")
-    drive_service.permissions().create(fileId=file_id, body={"role": "reader", "type": "anyone"}).execute()
-
-    link = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
-    os.remove(filename)
-
     try:
-        requests.post(MAKE_WEBHOOK_URL, json={"email": email, "file_link": link, "file_name": filename})
-    except:
-        pass
+        data = request.get_json()
+        print("📥 Incoming JSON:", data)
 
-    return jsonify({"message": "File filtered", "summary": summarize(filtered_df), "link": link})
+        email = data.get("email")
+        filters = data.get("filters", {})
+
+        if not email:
+            print("❌ Missing email in request.")
+            return jsonify({"error": "Missing email"}), 400
+
+        df = get_latest_inventory_from_drive()
+        if df is None:
+            print("❌ Could not load inventory.")
+            return jsonify({"error": "Could not load inventory"}), 500
+
+        filtered_df = filter_inventory(df, filters)
+        if filtered_df.empty:
+            print("⚠️ No matching stones.")
+            return jsonify({"error": "No matching stones"}), 404
+
+        filename = f"filtered_{uuid.uuid4().hex[:6]}.xlsx"
+        filtered_df.to_excel(filename, index=False)
+        beautify_excel(filename, summarize(filtered_df))
+
+        metadata = {"name": filename, "parents": [FOLDER_ID]}
+        media = MediaFileUpload(filename, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        file = drive_service.files().create(body=metadata, media_body=media, fields='id').execute()
+        file_id = file.get("id")
+        drive_service.permissions().create(fileId=file_id, body={"role": "reader", "type": "anyone"}).execute()
+
+        link = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
+        os.remove(filename)
+
+        print("✅ File generated:", link)
+
+        try:
+            requests.post(MAKE_WEBHOOK_URL, json={"email": email, "file_link": link, "file_name": filename})
+        except Exception as e:
+            print("⚠️ Failed to ping Make webhook:", str(e))
+
+        return jsonify({
+            "message": "File filtered",
+            "summary": summarize(filtered_df),
+            "link": link
+        })
+
+    except Exception as e:
+        print("❌ Exception occurred in /generate:", str(e))
+        return jsonify({"error": "Internal server error"}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
