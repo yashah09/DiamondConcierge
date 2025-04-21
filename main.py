@@ -10,18 +10,19 @@ import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Font
 
-# CONFIG
+# CONFIGURATION
 FOLDER_ID = '1diAVIuJdsOQhLEQuFzie6QACakeOie25'
 MAKE_WEBHOOK_URL = 'https://hook.eu2.make.com/h6jsruunr7u01wobm995dj8wtcmafph8'
 INVENTORY_FILE_ID = '1McHVVICDeeMRiA1fRU7inHmbSUCzeOD2'
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
+# AUTHENTICATION
 creds = service_account.Credentials.from_service_account_file(
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"], scopes=SCOPES
 )
 drive_service = build('drive', 'v3', credentials=creds)
-app = Flask(__name__)
 
+app = Flask(__name__)
 
 def get_latest_inventory_from_drive():
     try:
@@ -32,12 +33,53 @@ def get_latest_inventory_from_drive():
         while not done:
             _, done = downloader.next_chunk()
         fh.seek(0)
-        df = pd.read_excel(fh, engine="openpyxl")
-        return df
+        return pd.read_excel(fh, engine="openpyxl")
     except Exception as e:
-        print("Error reading inventory:", e)
+        print("Error loading inventory:", e)
         return None
 
+def beautify_excel(path, summary):
+    wb = load_workbook(path)
+    ws = wb.active
+
+    # Shift data down by 2 rows
+    ws.insert_rows(1, amount=2)
+
+    # Title row (F1:P1)
+    dark_red_fill = PatternFill(start_color="8B0000", end_color="8B0000", fill_type="solid")
+    white_bold_font = Font(color="FFFFFF", bold=True, name="Aptos Narrow", size=11)
+    for col in range(6, 17):
+        cell = ws.cell(row=1, column=col)
+        cell.fill = dark_red_fill
+        cell.font = white_bold_font
+
+    labels = ["", "Stones", "Carats", "", "Rap Average", "PPC Average", "Avg Disc", "", "", "", "Total Value"]
+    for i, label in enumerate(labels):
+        cell = ws.cell(row=1, column=6 + i)
+        cell.value = label if label else None
+
+    # Values row (F2:P2)
+    light_pink_fill = PatternFill(start_color="F4CCCC", end_color="F4CCCC", fill_type="solid")
+    for col in range(6, 17):
+        cell = ws.cell(row=2, column=col)
+        cell.fill = light_pink_fill
+        cell.font = Font(bold=(col == 6), name="Aptos Narrow", size=11)
+
+    ws["F2"] = "Selection"
+    ws["G2"] = summary["stones"]
+    ws["H2"] = round(summary["carats"], 2)
+    ws["J2"] = round(summary["rap_avg"], 2)
+    ws["K2"] = round(summary["ppc_avg"], 2)
+    ws["L2"] = round(summary["disc_avg"], 2)
+    ws["P2"] = round(summary["total_value"], 2)
+
+    # Header Row (Row 3)
+    for col in range(1, ws.max_column + 1):
+        cell = ws.cell(row=3, column=col)
+        cell.fill = dark_red_fill
+        cell.font = Font(color="FFFFFF", bold=False, name="Aptos Narrow", size=11)
+
+    wb.save(path)
 
 def filter_inventory(df, filters):
     df = df.copy()
@@ -50,8 +92,8 @@ def filter_inventory(df, filters):
         target = shape_map.get(filters["shape"].upper(), filters["shape"])
         df = df[df["Shape"].fillna('').str.upper() == target.upper()]
 
-    if filters.get("certified"):
-        df = df[df["Lab Name"].notna()]
+    if "certified" in filters:
+        df = df[df["Lab Name"].notna()] if filters["certified"] else df[df["Lab Name"].isna()]
 
     if "size_min" in filters and "size_max" in filters:
         df = df[(df["Cts"] >= filters["size_min"]) & (df["Cts"] <= filters["size_max"])]
@@ -73,17 +115,19 @@ def filter_inventory(df, filters):
             df = df[df[col].fillna('').str.upper().isin([v.upper() for v in filters[key]])]
 
     if "fluorescence" in filters:
-        fl_map = {
-            "NON": ["NON", "NONE"],
-            "FNT": ["FNT", "FAINT"],
-            "MED": ["MED", "MEDIUM"],
-            "STR": ["STR", "STG", "STRONG"],
-            "VST": ["VST", "VERY STRONG"]
+        flour_map = {
+            "NON": ["NONE", "NON"],
+            "FNT": ["FAINT", "FNT"],
+            "MED": ["MEDIUM", "MED"],
+            "STR": ["STRONG", "STR", "STG"],
+            "VST": ["VERY STRONG", "VST"]
         }
-        resolved = []
-        for f in filters["fluorescence"]:
-            resolved.extend(fl_map.get(f.upper(), [f]))
-        df = df[df["Fluo."].fillna('').str.upper().isin([v.upper() for v in resolved])]
+        valid_vals = []
+        for code in filters["fluorescence"]:
+            for key, aliases in flour_map.items():
+                if code.upper() in aliases or code.upper() == key:
+                    valid_vals.extend(aliases)
+        df = df[df["Fluo."].fillna('').str.upper().isin([v.upper() for v in valid_vals])]
 
     if "discount_max" in filters:
         df = df[df["Discount"] <= filters["discount_max"]]
@@ -95,8 +139,12 @@ def filter_inventory(df, filters):
     if "ppc_min" in filters:
         df = df[df["PPC"] >= filters["ppc_min"]]
 
-    return df.reset_index(drop=True)
+    if "td_min" in filters and "td_max" in filters:
+        df = df[(df["Total Depth"] >= filters["td_min"]) & (df["Total Depth"] <= filters["td_max"])]
+    if "table_min" in filters and "table_max" in filters:
+        df = df[(df["Table Size"] >= filters["table_min"]) & (df["Table Size"] <= filters["table_max"])]
 
+    return df.reset_index(drop=True)
 
 def summarize(df):
     return {
@@ -107,40 +155,6 @@ def summarize(df):
         "rap_avg": round(df["RAP Price"].mean(), 2),
         "total_value": round(df["Total Value"].sum(), 2)
     }
-
-
-def beautify_excel(path, summary):
-    wb = load_workbook(path)
-    ws = wb.active
-    ws.insert_rows(1, amount=3)
-
-    red_fill = PatternFill(start_color="8B0000", end_color="8B0000", fill_type="solid")
-    pink_fill = PatternFill(start_color="F4CCCC", end_color="F4CCCC", fill_type="solid")
-    white_bold = Font(color="FFFFFF", bold=True)
-    black_font = Font(color="000000")
-
-    summary_labels = ["", "Stones", "Carats", "", "Rap Avg", "PPC Avg", "Avg Disc", "", "", "", "Total Value"]
-    summary_values = ["Selection", summary["stones"], summary["carats"], "", summary["rap_avg"], summary["ppc_avg"], summary["disc_avg"], "", "", "", summary["total_value"]]
-
-    for i, val in enumerate(summary_labels):
-        cell = ws.cell(row=1, column=6+i)
-        cell.value = val if val else None
-        cell.fill = red_fill
-        cell.font = white_bold
-
-    for i, val in enumerate(summary_values):
-        cell = ws.cell(row=2, column=6+i)
-        cell.value = val if val != "" else None
-        cell.fill = pink_fill
-        cell.font = Font(bold=(i == 0))
-
-    for col in range(1, ws.max_column + 1):
-        cell = ws.cell(row=3, column=col)
-        cell.fill = red_fill
-        cell.font = white_bold
-
-    wb.save(path)
-
 
 @app.route("/generate", methods=["POST"])
 def generate():
@@ -160,7 +174,6 @@ def generate():
         return jsonify({"error": "No matching stones"}), 404
 
     summary = summarize(filtered_df)
-
     filename = f"filtered_{uuid.uuid4().hex[:6]}.xlsx"
     filtered_df.to_excel(filename, index=False)
     beautify_excel(filename, summary)
@@ -170,6 +183,7 @@ def generate():
     file = drive_service.files().create(body=metadata, media_body=media, fields='id').execute()
     file_id = file.get("id")
     drive_service.permissions().create(fileId=file_id, body={"role": "reader", "type": "anyone"}).execute()
+
     link = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
     os.remove(filename)
 
@@ -179,7 +193,6 @@ def generate():
         pass
 
     return jsonify({"message": "File filtered", "summary": summary, "link": link})
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
